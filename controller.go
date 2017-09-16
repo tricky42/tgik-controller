@@ -6,14 +6,11 @@ import (
 	"sync"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	informercorev1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
 	apicorev1 "k8s.io/client-go/pkg/api/v1"
@@ -22,35 +19,21 @@ import (
 )
 
 const (
-	secretSyncAnnotation      = "eightypercent.net/secretsync"
-	secretSyncSourceNamespace = "secretsync"
-	secretSyncKey             = "do it"
+	serviceFactoryAnnotation = "yaas.io/servicefactory"
+	serviceFactoryPrefix     = "sf-"
+	envSyncKey               = "cr.sf.env"
 )
 
-var namespaceBlacklist = map[string]bool{
-	"kube-public":             true,
-	"kube-system":             true,
-	secretSyncSourceNamespace: true,
-}
-
 type TGIKController struct {
-	secretGetter          corev1.SecretsGetter
-	secretLister          listercorev1.SecretLister
-	secretListerSynced    cache.InformerSynced
 	namespaceGetter       corev1.NamespacesGetter
 	namespaceLister       listercorev1.NamespaceLister
 	namespaceListerSynced cache.InformerSynced
-
-	queue workqueue.RateLimitingInterface
+	queue                 workqueue.RateLimitingInterface
 }
 
 func NewTGIKController(client *kubernetes.Clientset,
-	secretInformer informercorev1.SecretInformer,
 	namespaceInformer informercorev1.NamespaceInformer) *TGIKController {
 	c := &TGIKController{
-		secretGetter:          client.CoreV1(),
-		secretLister:          secretInformer.Lister(),
-		secretListerSynced:    secretInformer.Informer().HasSynced,
 		namespaceGetter:       client.CoreV1(),
 		namespaceLister:       namespaceInformer.Lister(),
 		namespaceListerSynced: namespaceInformer.Informer().HasSynced,
@@ -59,22 +42,24 @@ func NewTGIKController(client *kubernetes.Clientset,
 
 	// TODO: only schedule sync if it is a secret that has or had our
 	// annotation.
-	secretInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				log.Print("secret added")
-				c.ScheduleSecretSync()
+	/*
+		envInformer.Informer().AddEventHandler(
+			cache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj interface{}) {
+					log.Print("secret added")
+					c.ScheduleSecretSync()
+				},
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					log.Print("secret updated")
+					c.ScheduleSecretSync()
+				},
+				DeleteFunc: func(obj interface{}) {
+					log.Print("secret deleted")
+					c.ScheduleSecretSync()
+				},
 			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				log.Print("secret updated")
-				c.ScheduleSecretSync()
-			},
-			DeleteFunc: func(obj interface{}) {
-				log.Print("secret deleted")
-				c.ScheduleSecretSync()
-			},
-		},
-	)
+		)
+	*/
 
 	// TODO: only schedule sync if it is a namespace that has or had our
 	// annotation or the secretsync source namespace.
@@ -82,15 +67,15 @@ func NewTGIKController(client *kubernetes.Clientset,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				log.Print("namespace added")
-				c.ScheduleSecretSync()
+				c.ScheduleEnvSync()
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				log.Print("namespace updated")
-				c.ScheduleSecretSync()
+				c.ScheduleEnvSync()
 			},
 			DeleteFunc: func(obj interface{}) {
 				log.Print("namespace deleted")
-				c.ScheduleSecretSync()
+				c.ScheduleEnvSync()
 			},
 		},
 	)
@@ -115,7 +100,6 @@ func (c *TGIKController) Run(stop <-chan struct{}) {
 	log.Print("waiting for cache sync")
 	if !cache.WaitForCacheSync(
 		stop,
-		c.secretListerSynced,
 		c.namespaceListerSynced) {
 		log.Print("timed out waiting for cache sync")
 		return
@@ -182,6 +166,31 @@ func (c *TGIKController) processNextWorkItem() bool {
 	return true
 }
 
+func (c *TGIKController) doSync() error {
+	log.Printf("Starting doSync")
+
+	rawNamespaces, err := c.namespaceLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	var targetNamespaces []*apicorev1.Namespace
+	for _, ns := range rawNamespaces {
+		if name, ok := ns.Annotations[serviceFactoryAnnotation]; ok {
+			log.Printf(" -> Adding namespace '%s (%s)', found annotation '%s'!\n", ns.ObjectMeta.Name, name, serviceFactoryAnnotation)
+			targetNamespaces = append(targetNamespaces, ns)
+		} else {
+			log.Printf(" -> Skipping namespace '%s', missing annotation '%s'!\n", ns.ObjectMeta.Name, serviceFactoryAnnotation)
+		}
+	}
+
+	return nil
+}
+
+func (c *TGIKController) ScheduleEnvSync() {
+	c.queue.Add(envSyncKey)
+}
+
+/*
 func (c *TGIKController) ScheduleSecretSync() {
 	c.queue.Add(secretSyncKey)
 }
@@ -272,3 +281,4 @@ func (c *TGIKController) SyncNamespace(secrets []*apicorev1.Secret, ns string) {
 		}
 	}
 }
+*/

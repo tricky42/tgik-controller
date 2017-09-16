@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jbeda/tgik-controller/version"
+	"github.com/tricky42/tgik-controller/version"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -37,10 +37,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error creating client: %v", err)
 		os.Exit(1)
 	}
+
 	client := kubernetes.NewForConfigOrDie(config)
 
 	sharedInformers := informers.NewSharedInformerFactory(client, 10*time.Minute)
-	tgikController := NewTGIKController(client, sharedInformers.Core().V1().Secrets(), sharedInformers.Core().V1().Namespaces())
+	tgikController := NewTGIKController(client, sharedInformers.Core().V1().Namespaces())
 
 	sharedInformers.Start(nil)
 	tgikController.Run(nil)

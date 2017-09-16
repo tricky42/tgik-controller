@@ -14,7 +14,7 @@
 
 FROM ARG_FROM
 
-MAINTAINER Joe Beda <joe@heptio.com>
+MAINTAINER Andreas Bucksteeg <andreas@bucksteeg.de>
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
 

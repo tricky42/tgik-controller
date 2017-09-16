@@ -1,0 +1,16 @@
+#aaa
+---
+apiVersion: "v1"
+kind: Namespace
+metadata:
+  name: sf-prod
+  annotations:
+    "yaas.io/servicefactory": "My Super Duper Prod Env"
+#aaa
+---
+apiVersion: "v1"
+kind: Namespace
+metadata:
+  name: sf-stage
+  annotations:
+    "yaas.io/servicefactory": "My Super Messy Stage Env"
